@@ -48,7 +48,6 @@ function getStoredInquiries(): Inquiry[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_INQUIRIES);
     if (!raw) {
-      localStorage.setItem(LOCAL_STORAGE_INQUIRIES, JSON.stringify(DEFAULT_INQUIRIES));
       return DEFAULT_INQUIRIES;
     }
     return JSON.parse(raw);
@@ -89,14 +88,11 @@ export async function submitInquiry(data: {
     created_at: new Date().toISOString(),
   };
 
-  let supabaseSuccess = false;
   let supabaseErrorMessage = '';
 
   // 1. Direct insert to Supabase TechWorks table
   if (supabase) {
     try {
-      // First attempt: insert into user's exact TechWorks table structure:
-      // "FULLNAME", "EMAILADDRESS", "PHONE NUMBER", "PROJECT DESCRIPTION"
       const { data: supaData, error: techworksError } = await supabase
         .from('TechWorks')
         .insert([
@@ -111,7 +107,6 @@ export async function submitInquiry(data: {
         .single();
 
       if (!techworksError && supaData) {
-        supabaseSuccess = true;
         newInquiry = {
           ...newInquiry,
           id: String(supaData.id || newInquiry.id),
@@ -121,7 +116,7 @@ export async function submitInquiry(data: {
         supabaseErrorMessage = techworksError.message;
         console.warn('TechWorks table insert error:', techworksError.message);
         
-        // Fallback attempt: inquiries table in case user configured inquiries
+        // Fallback to inquiries table if user used alternative name
         const { data: inqData, error: inqError } = await supabase
           .from('inquiries')
           .insert([
@@ -138,7 +133,6 @@ export async function submitInquiry(data: {
           .single();
 
         if (!inqError && inqData) {
-          supabaseSuccess = true;
           newInquiry = {
             ...newInquiry,
             id: String(inqData.id || newInquiry.id),
@@ -151,10 +145,10 @@ export async function submitInquiry(data: {
       console.warn('Supabase insertion error:', err);
     }
   } else {
-    console.info('Supabase client not initialized: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are missing on Vercel or in local storage.');
+    console.info('Supabase client not initialized.');
   }
 
-  // 2. Also try server API endpoint if on Node/local environment (ignore 404 on static Vercel)
+  // 2. Also try server API endpoint if on Node environment (ignore 404 on static Vercel)
   try {
     const res = await fetch('/api/inquiries', {
       method: 'POST',
@@ -168,10 +162,10 @@ export async function submitInquiry(data: {
       }
     }
   } catch (e) {
-    // Normal on static Vercel deployments
+    // Normal on static Vercel
   }
 
-  // 3. Always update local storage
+  // 3. Save to local storage for local offline buffer
   const localList = getStoredInquiries();
   const updated = [newInquiry, ...localList.filter((item) => item.id !== newInquiry.id)];
   saveStoredInquiries(updated);
@@ -179,21 +173,22 @@ export async function submitInquiry(data: {
   return { 
     success: true, 
     inquiry: newInquiry,
-    error: supabaseErrorMessage ? `Saved locally. Note from database: ${supabaseErrorMessage}` : undefined 
+    error: supabaseErrorMessage ? `Note from database: ${supabaseErrorMessage}` : undefined 
   };
 }
 
 export async function fetchInquiries(): Promise<Inquiry[]> {
   const supabase = getSupabaseClient();
+  
   if (supabase) {
-    // Check TechWorks table first
+    // Check TechWorks table first (Supabase Cloud)
     try {
       const { data, error } = await supabase
         .from('TechWorks')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         const mapped: Inquiry[] = data.map((item: any) => ({
           id: String(item.id),
           name: item['FULLNAME'] || item.name || 'Anonymous',
@@ -206,6 +201,8 @@ export async function fetchInquiries(): Promise<Inquiry[]> {
         }));
         saveStoredInquiries(mapped);
         return mapped;
+      } else if (error) {
+        console.warn('TechWorks table query error:', error.message);
       }
     } catch (err) {
       console.warn('TechWorks table query error:', err);
@@ -218,7 +215,7 @@ export async function fetchInquiries(): Promise<Inquiry[]> {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
+      if (!error && Array.isArray(data) && data.length > 0) {
         saveStoredInquiries(data);
         return data;
       }
@@ -227,7 +224,7 @@ export async function fetchInquiries(): Promise<Inquiry[]> {
     }
   }
 
-  // 2. Fetch from Express API (if server running)
+  // 2. Fetch from Express API (if local dev server is running)
   try {
     const res = await fetch('/api/inquiries');
     if (res.ok) {
@@ -251,6 +248,11 @@ export async function updateInquiryStatus(
 ): Promise<boolean> {
   const supabase = getSupabaseClient();
   if (supabase) {
+    try {
+      await supabase.from('TechWorks').update(updates).eq('id', id);
+    } catch (e) {
+      // ignore
+    }
     try {
       await supabase.from('inquiries').update(updates).eq('id', id);
     } catch (e) {
