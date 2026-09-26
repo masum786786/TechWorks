@@ -1,22 +1,24 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SUPABASE_DIRECT_CONFIG } from '../config/supabaseConfig';
 
 const STORAGE_KEY_URL = 'techworks_supabase_url';
 const STORAGE_KEY_ANON = 'techworks_supabase_anon_key';
 
 export function getStoredSupabaseConfig() {
-  // Support Vite client-side environment variables
-  // (Safe on Vercel, Netlify, Render, Railway, GitHub Actions, or local dev)
+  // 1. Vite client-side environment variables (if set)
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
   const envKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
 
-  // Support runtime UI configuration in browser localStorage
-  // This ensures that even if you upload code to public GitHub WITHOUT committing secrets,
-  // you can connect your free Supabase database in 1 second through the Admin UI.
+  // 2. Direct hardcoded fallback (for 100% free Vercel deployment without touching Vercel Settings)
+  const codeUrl = SUPABASE_DIRECT_CONFIG.url || '';
+  const codeKey = SUPABASE_DIRECT_CONFIG.anonKey || '';
+
+  // 3. Browser localStorage configuration via Admin UI
   const storedUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_URL) || '' : '';
   const storedKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ANON) || '' : '';
 
-  const activeUrl = storedUrl || envUrl;
-  const activeKey = storedKey || envKey;
+  const activeUrl = storedUrl || envUrl || codeUrl;
+  const activeKey = storedKey || envKey || codeKey;
 
   return {
     url: activeUrl,
@@ -82,18 +84,21 @@ create table if not exists public."TechWorks" (
 alter table public."TechWorks" enable row level security;
 
 -- 3. Policy to allow visitors to insert inquiries without logging in:
+drop policy if exists "Allow public form submissions" on public."TechWorks";
 create policy "Allow public form submissions"
 on public."TechWorks" for insert
 to anon, authenticated
 with check (true);
 
 -- 4. Policy to allow reading data:
+drop policy if exists "Allow read access" on public."TechWorks";
 create policy "Allow read access"
 on public."TechWorks" for select
 to anon, authenticated
 using (true);
 
 -- 5. Policy to allow deleting records (Admin):
+drop policy if exists "Allow delete access" on public."TechWorks";
 create policy "Allow delete access"
 on public."TechWorks" for delete
 to anon, authenticated
