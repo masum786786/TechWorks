@@ -89,6 +89,9 @@ export async function submitInquiry(data: {
     created_at: new Date().toISOString(),
   };
 
+  let supabaseSuccess = false;
+  let supabaseErrorMessage = '';
+
   // 1. Direct insert to Supabase TechWorks table
   if (supabase) {
     try {
@@ -108,15 +111,18 @@ export async function submitInquiry(data: {
         .single();
 
       if (!techworksError && supaData) {
+        supabaseSuccess = true;
         newInquiry = {
           ...newInquiry,
           id: String(supaData.id || newInquiry.id),
           created_at: supaData.created_at || newInquiry.created_at,
         };
       } else if (techworksError) {
-        console.warn('TechWorks table insert error, trying standard table fallback:', techworksError.message);
+        supabaseErrorMessage = techworksError.message;
+        console.warn('TechWorks table insert error:', techworksError.message);
+        
         // Fallback attempt: inquiries table in case user configured inquiries
-        await supabase
+        const { data: inqData, error: inqError } = await supabase
           .from('inquiries')
           .insert([
             {
@@ -127,14 +133,28 @@ export async function submitInquiry(data: {
               description: newInquiry.description,
               status: 'new',
             },
-          ]);
+          ])
+          .select()
+          .single();
+
+        if (!inqError && inqData) {
+          supabaseSuccess = true;
+          newInquiry = {
+            ...newInquiry,
+            id: String(inqData.id || newInquiry.id),
+            created_at: inqData.created_at || newInquiry.created_at,
+          };
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
+      supabaseErrorMessage = err.message || 'Supabase connection failed';
       console.warn('Supabase insertion error:', err);
     }
+  } else {
+    console.info('Supabase client not initialized: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are missing on Vercel or in local storage.');
   }
 
-  // 2. Also save to server API endpoint (keeps in-memory + data/inquiries.json backup)
+  // 2. Also try server API endpoint if on Node/local environment (ignore 404 on static Vercel)
   try {
     const res = await fetch('/api/inquiries', {
       method: 'POST',
@@ -148,7 +168,7 @@ export async function submitInquiry(data: {
       }
     }
   } catch (e) {
-    // Backend offline, fallback to local storage
+    // Normal on static Vercel deployments
   }
 
   // 3. Always update local storage
@@ -156,7 +176,11 @@ export async function submitInquiry(data: {
   const updated = [newInquiry, ...localList.filter((item) => item.id !== newInquiry.id)];
   saveStoredInquiries(updated);
 
-  return { success: true, inquiry: newInquiry };
+  return { 
+    success: true, 
+    inquiry: newInquiry,
+    error: supabaseErrorMessage ? `Saved locally. Note from database: ${supabaseErrorMessage}` : undefined 
+  };
 }
 
 export async function fetchInquiries(): Promise<Inquiry[]> {
@@ -203,7 +227,7 @@ export async function fetchInquiries(): Promise<Inquiry[]> {
     }
   }
 
-  // 2. Fetch from Express API
+  // 2. Fetch from Express API (if server running)
   try {
     const res = await fetch('/api/inquiries');
     if (res.ok) {
@@ -214,7 +238,7 @@ export async function fetchInquiries(): Promise<Inquiry[]> {
       }
     }
   } catch (e) {
-    // Server not available
+    // Expected on static Vercel
   }
 
   // 3. Fallback to LocalStorage
