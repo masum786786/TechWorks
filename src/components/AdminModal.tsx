@@ -15,11 +15,12 @@ import {
   Eye,
   CheckCircle2,
   Database,
-  Check
+  Check,
+  Copy
 } from 'lucide-react';
 import { Inquiry } from '../types';
 import { fetchInquiries, updateInquiryStatus, deleteInquiry } from '../lib/api';
-import { getStoredSupabaseConfig, saveStoredSupabaseConfig, getSupabaseClient } from '../lib/supabase';
+import { getStoredSupabaseConfig, saveStoredSupabaseConfig, getSupabaseClient, SUPABASE_SQL_SCHEMA } from '../lib/supabase';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -47,6 +48,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
   const [supaUrl, setSupaUrl] = useState(() => getStoredSupabaseConfig().url);
   const [supaKey, setSupaKey] = useState(() => getStoredSupabaseConfig().anonKey);
   const [supaStatusMsg, setSupaStatusMsg] = useState('');
+  const [copiedSql, setCopiedSql] = useState(false);
 
   // Selected inquiry for detail modal/edit
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
@@ -76,8 +78,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
     e.preventDefault();
     setAuthError('');
 
-    // Specific user credential requirement:
-    // admin@123 / admin@123
+    // Admin Credentials: admin@123 / admin@123
     if (username.trim() === 'admin@123' && password.trim() === 'admin@123') {
       setIsAuthenticated(true);
       sessionStorage.setItem('techworks_admin_auth', 'true');
@@ -129,20 +130,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
   const handleSaveSupabaseConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     saveStoredSupabaseConfig(supaUrl, supaKey);
-    setSupaStatusMsg('Testing connection to public."TechWorks" table...');
+    setSupaStatusMsg('Testing connection to Supabase public."TechWorks" table...');
     
     const client = getSupabaseClient();
     if (!client) {
-      setSupaStatusMsg('Please enter valid URL and Anon Key.');
+      setSupaStatusMsg('Please enter a valid URL and Anon Key.');
       return;
     }
 
     try {
       const { data, error } = await client.from('TechWorks').select('count', { count: 'exact', head: true });
       if (error) {
-        setSupaStatusMsg(`Connected, but received table note: ${error.message}`);
+        setSupaStatusMsg(`Connected, note: ${error.message}`);
       } else {
-        setSupaStatusMsg('Connected successfully to public."TechWorks" table!');
+        setSupaStatusMsg('Connected successfully to public."TechWorks" table! Live sync active.');
       }
       setTimeout(() => {
         setShowDbConfig(false);
@@ -152,6 +153,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
     } catch (err: any) {
       setSupaStatusMsg(`Error connecting: ${err.message || 'Network error'}`);
     }
+  };
+
+  const copySqlCode = () => {
+    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2500);
   };
 
   const exportToCSV = () => {
@@ -331,7 +338,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
             {/* Supabase Config Overlay Modal when user clicks Database button */}
             {showDbConfig && (
               <div className="absolute inset-0 z-20 bg-black/50 backdrop-blur-2xs flex items-center justify-center p-4">
-                <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#D9DDE1] shadow-2xl">
+                <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-[#D9DDE1] shadow-2xl max-h-[90vh] overflow-y-auto">
                   <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#EEF0F2]">
                     <div className="flex items-center gap-2">
                       <Database className="w-4 h-4 text-[#B8860B]" />
@@ -347,9 +354,26 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
                     </button>
                   </div>
 
-                  <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-                    Submissions will automatically save to your Supabase <strong>public."TechWorks"</strong> table (columns: <code>FULLNAME</code>, <code>EMAILADDRESS</code>, <code>PHONE NUMBER</code>, <code>PROJECT DESCRIPTION</code>).
+                  <p className="text-xs text-gray-600 mb-3 leading-relaxed">
+                    Submissions automatically store in your Supabase <strong>public."TechWorks"</strong> table (columns: <code>FULLNAME</code>, <code>EMAILADDRESS</code>, <code>PHONE NUMBER</code>, <code>PROJECT DESCRIPTION</code>).
                   </p>
+
+                  <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                    <div className="font-bold flex items-center justify-between mb-1">
+                      <span>Supabase SQL Setup (100% Free):</span>
+                      <button 
+                        type="button" 
+                        onClick={copySqlCode} 
+                        className="text-[11px] bg-amber-200/80 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-bold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedSql ? <Check className="w-3 h-3 text-emerald-700" /> : <Copy className="w-3 h-3" />}
+                        {copiedSql ? 'Copied SQL!' : 'Copy SQL'}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-amber-800">
+                      Run this in Supabase <strong>SQL Editor</strong> to ensure public anonymous submissions and reading work smoothly without needing user authentication.
+                    </p>
+                  </div>
 
                   <form onSubmit={handleSaveSupabaseConfig} className="space-y-3 text-xs">
                     <div>
