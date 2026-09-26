@@ -1,9 +1,9 @@
 import { Inquiry } from '../types';
-import { getSupabaseClient } from './supabase';
+import { supabase } from './supabase';
 
 const LOCAL_STORAGE_INQUIRIES = 'techworks_local_inquiries';
 
-// Initial default submissions so admin panel shows realistic demonstration if empty
+// Initial default submissions for demonstration if database is empty
 const DEFAULT_INQUIRIES: Inquiry[] = [
   {
     id: 'inq-101',
@@ -47,9 +47,7 @@ function getStoredInquiries(): Inquiry[] {
   if (typeof window === 'undefined') return DEFAULT_INQUIRIES;
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_INQUIRIES);
-    if (!raw) {
-      return DEFAULT_INQUIRIES;
-    }
+    if (!raw) return DEFAULT_INQUIRIES;
     return JSON.parse(raw);
   } catch (e) {
     return DEFAULT_INQUIRIES;
@@ -66,6 +64,9 @@ function saveStoredInquiries(items: Inquiry[]) {
   }
 }
 
+/**
+ * Official Supabase Insert - Submits consultation inquiries into the "TechWorks" table
+ */
 export async function submitInquiry(data: {
   name: string;
   email: string;
@@ -74,9 +75,8 @@ export async function submitInquiry(data: {
   description: string;
   budget_range?: string;
 }): Promise<{ success: boolean; inquiry?: Inquiry; error?: string }> {
-  const supabase = getSupabaseClient();
   let newInquiry: Inquiry = {
-    id: 'inq-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4),
+    id: 'inq-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
     name: data.name.trim(),
     email: data.email.trim(),
     phone: data.phone.trim(),
@@ -88,84 +88,36 @@ export async function submitInquiry(data: {
     created_at: new Date().toISOString(),
   };
 
-  let supabaseErrorMessage = '';
+  let errorMessage: string | undefined;
 
-  // 1. Direct insert to Supabase TechWorks table
-  if (supabase) {
-    try {
-      const { data: supaData, error: techworksError } = await supabase
-        .from('TechWorks')
-        .insert([
-          {
-            FULLNAME: newInquiry.name,
-            EMAILADDRESS: newInquiry.email,
-            'PHONE NUMBER': newInquiry.phone,
-            'PROJECT DESCRIPTION': `${newInquiry.service ? `[Service: ${newInquiry.service}] ` : ''}${newInquiry.description}`,
-          },
-        ])
-        .select()
-        .single();
-
-      if (!techworksError && supaData) {
-        newInquiry = {
-          ...newInquiry,
-          id: String(supaData.id || newInquiry.id),
-          created_at: supaData.created_at || newInquiry.created_at,
-        };
-      } else if (techworksError) {
-        supabaseErrorMessage = techworksError.message;
-        console.warn('TechWorks table insert error:', techworksError.message);
-        
-        // Fallback to inquiries table if user used alternative name
-        const { data: inqData, error: inqError } = await supabase
-          .from('inquiries')
-          .insert([
-            {
-              name: newInquiry.name,
-              email: newInquiry.email,
-              phone: newInquiry.phone,
-              service: newInquiry.service,
-              description: newInquiry.description,
-              status: 'new',
-            },
-          ])
-          .select()
-          .single();
-
-        if (!inqError && inqData) {
-          newInquiry = {
-            ...newInquiry,
-            id: String(inqData.id || newInquiry.id),
-            created_at: inqData.created_at || newInquiry.created_at,
-          };
-        }
-      }
-    } catch (err: any) {
-      supabaseErrorMessage = err.message || 'Supabase connection failed';
-      console.warn('Supabase insertion error:', err);
-    }
-  } else {
-    console.info('Supabase client not initialized.');
-  }
-
-  // 2. Also try server API endpoint if on Node environment (ignore 404 on static Vercel)
+  // 1. Official Supabase insert query into "TechWorks" table
   try {
-    const res = await fetch('/api/inquiries', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newInquiry),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.inquiry) {
-        newInquiry = json.inquiry;
-      }
+    const { data: insertedData, error } = await supabase
+      .from('TechWorks')
+      .insert([
+        {
+          FULLNAME: newInquiry.name,
+          EMAILADDRESS: newInquiry.email,
+          'PHONE NUMBER': newInquiry.phone,
+          'PROJECT DESCRIPTION': `${newInquiry.service ? `[${newInquiry.service}] ` : ''}${newInquiry.description}${newInquiry.budget_range ? ` (Budget: ${newInquiry.budget_range})` : ''}`,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Supabase insert note:', error.message);
+      errorMessage = error.message;
+    } else if (insertedData) {
+      newInquiry.id = String(insertedData.id || newInquiry.id);
+      newInquiry.created_at = insertedData.created_at || newInquiry.created_at;
     }
-  } catch (e) {
-    // Normal on static Vercel
+  } catch (err: any) {
+    console.warn('Supabase connection error:', err);
+    errorMessage = err.message || 'Database connection error';
   }
 
-  // 3. Save to local storage for local offline buffer
+  // 2. Cache in local storage for instant offline / local fallback
   const localList = getStoredInquiries();
   const updated = [newInquiry, ...localList.filter((item) => item.id !== newInquiry.id)];
   saveStoredInquiries(updated);
@@ -173,101 +125,55 @@ export async function submitInquiry(data: {
   return { 
     success: true, 
     inquiry: newInquiry,
-    error: supabaseErrorMessage ? `Note from database: ${supabaseErrorMessage}` : undefined 
+    error: errorMessage 
   };
 }
 
+/**
+ * Official Supabase Select - Fetches all submissions directly from "TechWorks" table
+ */
 export async function fetchInquiries(): Promise<Inquiry[]> {
-  const supabase = getSupabaseClient();
-  
-  if (supabase) {
-    // Check TechWorks table first (Supabase Cloud)
-    try {
-      const { data, error } = await supabase
-        .from('TechWorks')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && Array.isArray(data)) {
-        const mapped: Inquiry[] = data.map((item: any) => ({
-          id: String(item.id),
-          name: item['FULLNAME'] || item.name || 'Anonymous',
-          email: item['EMAILADDRESS'] || item.email || '',
-          phone: item['PHONE NUMBER'] || item.phone || '',
-          service: 'Custom Software Development',
-          description: item['PROJECT DESCRIPTION'] || item.description || '',
-          status: 'new',
-          created_at: item.created_at || new Date().toISOString(),
-        }));
-        saveStoredInquiries(mapped);
-        return mapped;
-      } else if (error) {
-        console.warn('TechWorks table query error:', error.message);
-      }
-    } catch (err) {
-      console.warn('TechWorks table query error:', err);
-    }
-
-    // Also check inquiries table
-    try {
-      const { data, error } = await supabase
-        .from('inquiries')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        saveStoredInquiries(data);
-        return data;
-      }
-    } catch (err) {
-      console.warn('inquiries table query error:', err);
-    }
-  }
-
-  // 2. Fetch from Express API (if local dev server is running)
   try {
-    const res = await fetch('/api/inquiries');
-    if (res.ok) {
-      const json = await res.json();
-      if (Array.isArray(json.inquiries) && json.inquiries.length > 0) {
-        saveStoredInquiries(json.inquiries);
-        return json.inquiries;
-      }
+    const { data, error } = await supabase
+      .from('TechWorks')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const mapped: Inquiry[] = data.map((item: any) => ({
+        id: String(item.id),
+        name: item['FULLNAME'] || item.name || 'Anonymous Client',
+        email: item['EMAILADDRESS'] || item.email || '',
+        phone: item['PHONE NUMBER'] || item.phone || '',
+        service: 'Custom Software Development',
+        description: item['PROJECT DESCRIPTION'] || item.description || '',
+        status: 'new',
+        created_at: item.created_at || new Date().toISOString(),
+      }));
+      saveStoredInquiries(mapped);
+      return mapped;
+    } else if (error) {
+      console.warn('Supabase select note:', error.message);
     }
-  } catch (e) {
-    // Expected on static Vercel
+  } catch (err) {
+    console.warn('Supabase select error:', err);
   }
 
-  // 3. Fallback to LocalStorage
+  // Fallback to local storage if network is offline or table is empty
   return getStoredInquiries();
 }
 
+/**
+ * Official Supabase Update
+ */
 export async function updateInquiryStatus(
   id: string,
   updates: Partial<Pick<Inquiry, 'status' | 'admin_notes'>>,
 ): Promise<boolean> {
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from('TechWorks').update(updates).eq('id', id);
-    } catch (e) {
-      // ignore
-    }
-    try {
-      await supabase.from('inquiries').update(updates).eq('id', id);
-    } catch (e) {
-      // ignore
-    }
-  }
-
   try {
-    await fetch(`/api/inquiries/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
+    await supabase.from('TechWorks').update(updates).eq('id', id);
   } catch (e) {
-    // ignore
+    console.warn('Supabase update note:', e);
   }
 
   const current = getStoredInquiries();
@@ -276,27 +182,14 @@ export async function updateInquiryStatus(
   return true;
 }
 
+/**
+ * Official Supabase Delete
+ */
 export async function deleteInquiry(id: string): Promise<boolean> {
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from('TechWorks').delete().eq('id', id);
-    } catch (e) {
-      // ignore
-    }
-    try {
-      await supabase.from('inquiries').delete().eq('id', id);
-    } catch (e) {
-      // ignore
-    }
-  }
-
   try {
-    await fetch(`/api/inquiries/${id}`, {
-      method: 'DELETE',
-    });
+    await supabase.from('TechWorks').delete().eq('id', id);
   } catch (e) {
-    // ignore
+    console.warn('Supabase delete note:', e);
   }
 
   const current = getStoredInquiries();

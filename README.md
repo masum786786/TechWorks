@@ -1,22 +1,29 @@
 # TechWorks - Enterprise Software & Digital Solutions
 
-High-velocity digital engineering company website and inquiry management portal built with **React 19**, **Vite**, **Tailwind CSS**, and **Supabase (PostgreSQL - 100% Free Tier)**.
+High-velocity digital engineering company website and inquiry management portal built with **React 19**, **Vite**, **Tailwind CSS**, and **Supabase (PostgreSQL)**.
 
 ---
 
-## 🚀 Quick Setup & Free Deployment
+## 🚀 Official Supabase Integration
 
-### 1. Clone the repository
-```bash
-git clone <your-github-repo-url>
-cd <repo-folder>
-npm install
+This application follows the official Supabase standard architecture using `@supabase/supabase-js`.
+
+### Environment Variables
+Local development uses `.env`:
+```env
+VITE_SUPABASE_URL=https://pajlgcdpxctqcoywsfcd.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-### 2. Supabase Free Setup (No Paid Plan Required)
-1. Go to [supabase.com](https://supabase.com) and create a **Free** project.
-2. In the Supabase dashboard, click **SQL Editor** on the left menu.
-3. Paste and run this SQL script to create the table and enable anonymous submissions:
+On Vercel (or Netlify/Railway/Render), add these two variables in **Project Settings -> Environment Variables**:
+1. `VITE_SUPABASE_URL`
+2. `VITE_SUPABASE_ANON_KEY`
+
+---
+
+## 🗄️ Supabase PostgreSQL Table Schema
+
+Table name: `TechWorks`
 
 ```sql
 create table if not exists public."TechWorks" (
@@ -32,57 +39,35 @@ create table if not exists public."TechWorks" (
 -- Enable Row Level Security (RLS)
 alter table public."TechWorks" enable row level security;
 
--- Allow visitors to submit inquiry without login
+-- Allow public visitor form submissions
 create policy "Allow public form submissions"
 on public."TechWorks" for insert
 to anon, authenticated
 with check (true);
 
--- Allow reading records
+-- Allow reading inquiries in admin portal
 create policy "Allow read access"
 on public."TechWorks" for select
 to anon, authenticated
 using (true);
 
--- Allow delete access
+-- Allow updating and deleting records in admin portal
+create policy "Allow update access"
+on public."TechWorks" for update
+to anon, authenticated
+using (true);
+
 create policy "Allow delete access"
 on public."TechWorks" for delete
 to anon, authenticated
 using (true);
 ```
 
-### 3. Connect Supabase (Two Easy Ways)
-
-#### Option A: Via Environment Variables (Best for Vercel/Netlify/GitHub)
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-Fill in your Supabase project keys from **Project Settings -> API**:
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
-```
-
-#### Option B: Zero-Config UI (No `.env` file needed!)
-Even if you push code to GitHub with no `.env` file:
-1. Open the website.
-2. Click **Admin Portal** in the footer.
-3. Login using `admin@123` / `admin@123`.
-4. Click the **Database** button in the top right.
-5. Paste your Supabase URL & Anon Key. It will test and connect immediately.
-
 ---
 
-## 🔐 Git Security & Safety
-- `.gitignore` is pre-configured to exclude all `.env` files, node_modules, and build artifacts.
-- No paid subscriptions, credit cards, or service role secrets are needed.
-- Uses only the public `anon` key which is safe for client applications.
-
----
-
-## 💻 Run Locally
+## 💻 Local Development
 ```bash
+npm install
 npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.

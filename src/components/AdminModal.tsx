@@ -14,13 +14,9 @@ import {
   AlertCircle,
   Eye,
   CheckCircle2,
-  Database,
-  Check,
-  Copy
 } from 'lucide-react';
 import { Inquiry } from '../types';
 import { fetchInquiries, updateInquiryStatus, deleteInquiry } from '../lib/api';
-import { getStoredSupabaseConfig, saveStoredSupabaseConfig, getSupabaseClient, SUPABASE_SQL_SCHEMA } from '../lib/supabase';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -42,13 +38,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-
-  // Supabase quick connect drawer/dialog
-  const [showDbConfig, setShowDbConfig] = useState(false);
-  const [supaUrl, setSupaUrl] = useState(() => getStoredSupabaseConfig().url);
-  const [supaKey, setSupaKey] = useState(() => getStoredSupabaseConfig().anonKey);
-  const [supaStatusMsg, setSupaStatusMsg] = useState('');
-  const [copiedSql, setCopiedSql] = useState(false);
 
   // Selected inquiry for detail modal/edit
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
@@ -127,40 +116,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleSaveSupabaseConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    saveStoredSupabaseConfig(supaUrl, supaKey);
-    setSupaStatusMsg('Testing connection to Supabase public."TechWorks" table...');
-    
-    const client = getSupabaseClient();
-    if (!client) {
-      setSupaStatusMsg('Please enter a valid URL and Anon Key.');
-      return;
-    }
-
-    try {
-      const { data, error } = await client.from('TechWorks').select('count', { count: 'exact', head: true });
-      if (error) {
-        setSupaStatusMsg(`Connected, note: ${error.message}`);
-      } else {
-        setSupaStatusMsg('Connected successfully to public."TechWorks" table! Live sync active.');
-      }
-      setTimeout(() => {
-        setShowDbConfig(false);
-        setSupaStatusMsg('');
-        loadData();
-      }, 1500);
-    } catch (err: any) {
-      setSupaStatusMsg(`Error connecting: ${err.message || 'Network error'}`);
-    }
-  };
-
-  const copySqlCode = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2500);
-  };
-
   const exportToCSV = () => {
     if (inquiries.length === 0) return;
     const headers = ['ID', 'Date', 'Name', 'Email', 'Phone', 'Service', 'Description', 'Status', 'Notes'];
@@ -211,7 +166,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
         onClick={(e) => e.stopPropagation()}
       >
         
-        {/* Top Header - Mobile & Desktop Responsive */}
+        {/* Top Header */}
         <div className="bg-[#3A3F44] text-white px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between shrink-0 border-b border-gray-700">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/10 flex items-center justify-center text-[#B8860B] border border-white/15 shrink-0">
@@ -232,22 +187,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {isAuthenticated && (
-              <>
-                <button
-                  onClick={() => setShowDbConfig(!showDbConfig)}
-                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
-                  title="Configure Supabase TechWorks Table Connection"
-                >
-                  <Database className="w-3.5 h-3.5 text-[#B8860B]" />
-                  <span className="hidden sm:inline">Database</span>
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer"
-                >
-                  Log Out
-                </button>
-              </>
+              <button
+                onClick={handleLogout}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer"
+              >
+                Log Out
+              </button>
             )}
             <button
               onClick={onClose}
@@ -332,103 +277,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
             </div>
           </div>
         ) : (
-          /* Authenticated Dashboard - Fully Mobile Responsive */
+          /* Authenticated Dashboard - Clean & Responsive */
           <div className="flex-1 flex flex-col overflow-hidden bg-[#F9FAFB] relative">
             
-            {/* Supabase Config Overlay Modal when user clicks Database button */}
-            {showDbConfig && (
-              <div className="absolute inset-0 z-20 bg-black/50 backdrop-blur-2xs flex items-center justify-center p-4">
-                <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-[#D9DDE1] shadow-2xl max-h-[90vh] overflow-y-auto">
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#EEF0F2]">
-                    <div className="flex items-center gap-2">
-                      <Database className="w-4 h-4 text-[#B8860B]" />
-                      <h4 className="text-sm font-bold text-[#222222]">
-                        Supabase public."TechWorks" Database Link
-                      </h4>
-                    </div>
-                    <button
-                      onClick={() => setShowDbConfig(false)}
-                      className="p-1 rounded-full hover:bg-gray-100 text-gray-500 cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-gray-600 mb-3 leading-relaxed">
-                    Submissions automatically store in your Supabase <strong>public."TechWorks"</strong> table (columns: <code>FULLNAME</code>, <code>EMAILADDRESS</code>, <code>PHONE NUMBER</code>, <code>PROJECT DESCRIPTION</code>).
-                  </p>
-
-                  <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-                    <div className="font-bold flex items-center justify-between mb-1">
-                      <span>Supabase SQL Setup (100% Free):</span>
-                      <button 
-                        type="button" 
-                        onClick={copySqlCode} 
-                        className="text-[11px] bg-amber-200/80 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-bold inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        {copiedSql ? <Check className="w-3 h-3 text-emerald-700" /> : <Copy className="w-3 h-3" />}
-                        {copiedSql ? 'Copied SQL!' : 'Copy SQL'}
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-amber-800">
-                      Run this in Supabase <strong>SQL Editor</strong> to ensure public anonymous submissions and reading work smoothly without needing user authentication.
-                    </p>
-                  </div>
-
-                  <form onSubmit={handleSaveSupabaseConfig} className="space-y-3 text-xs">
-                    <div>
-                      <label className="font-bold text-[#3A3F44] block mb-1">
-                        Supabase Project URL:
-                      </label>
-                      <input
-                        type="url"
-                        placeholder="https://xyzcompany.supabase.co"
-                        value={supaUrl}
-                        onChange={(e) => setSupaUrl(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-[#D9DDE1] text-xs font-mono outline-none focus:border-[#3A3F44]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="font-bold text-[#3A3F44] block mb-1">
-                        Supabase Anon Key:
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="eyJhbGciOi..."
-                        value={supaKey}
-                        onChange={(e) => setSupaKey(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-[#D9DDE1] text-xs font-mono outline-none focus:border-[#3A3F44]"
-                      />
-                    </div>
-
-                    {supaStatusMsg && (
-                      <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold">
-                        {supaStatusMsg}
-                      </div>
-                    )}
-
-                    <div className="pt-2 flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowDbConfig(false)}
-                        className="px-3.5 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-bold hover:bg-gray-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-1.5 rounded-lg bg-[#3A3F44] text-white font-bold hover:bg-[#222222]"
-                      >
-                        Save & Connect
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-
-            {/* Top Stat Bar - Responsive Layout */}
+            {/* Top Stat Bar */}
             <div className="bg-white border-b border-[#D9DDE1] px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
               
               <div className="flex items-center justify-between sm:justify-start gap-3">
@@ -444,7 +296,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
                   onClick={loadData}
                   disabled={loading}
                   className="p-1.5 sm:p-2 rounded-lg bg-[#F5F6F7] hover:bg-[#EEF0F2] text-[#3A3F44] border border-[#D9DDE1] transition-colors cursor-pointer"
-                  title="Refresh Inquiries"
+                  title="Refresh Inquiries from Supabase"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
@@ -517,7 +369,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
                   </div>
                 ) : (
                   <>
-                    {/* Mobile Card List (Visible only on < md screens for maximum touch friendliness) */}
+                    {/* Mobile Card List (Visible only on < md screens) */}
                     <div className="md:hidden flex-1 overflow-y-auto divide-y divide-[#EEF0F2] p-2 space-y-2">
                       {filteredInquiries.map((inq) => (
                         <div 
@@ -709,7 +561,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
                 )}
               </div>
 
-              {/* Inquiry Detail Drawer / Modal - Fully Responsive */}
+              {/* Inquiry Detail Drawer / Modal */}
               {selectedInquiry && (
                 <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
                   <div className="bg-white rounded-2xl sm:rounded-3xl max-w-lg w-full p-5 sm:p-7 border border-[#D9DDE1] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
