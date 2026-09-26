@@ -3,54 +3,14 @@ import { supabase } from './supabase';
 
 const LOCAL_STORAGE_INQUIRIES = 'techworks_local_inquiries';
 
-// Initial default submissions for demonstration if database is empty
-const DEFAULT_INQUIRIES: Inquiry[] = [
-  {
-    id: 'inq-101',
-    name: 'Sameer Verma',
-    email: 'sameer.v@zenithlogistics.in',
-    phone: '+91 98112 45890',
-    service: 'Android App Development',
-    description: 'Looking to build an Android logistics dispatch driver app with offline map routing, electronic signature capture, and UPI payment integration.',
-    status: 'new',
-    admin_notes: 'Priority lead. Sent WhatsApp introductory message.',
-    created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
-    budget_range: '₹2,50,000 - ₹5,00,000',
-  },
-  {
-    id: 'inq-102',
-    name: 'Ananya Deshmukh',
-    email: 'ananya@orthocare.clinic',
-    phone: '+91 97234 11200',
-    service: 'Custom Software Development',
-    description: 'Need an online clinic OPD management and patient history portal similar to your dental clinic project.',
-    status: 'contacted',
-    admin_notes: 'Demo call scheduled for tomorrow 3 PM IST.',
-    created_at: new Date(Date.now() - 86400000 * 1.5).toISOString(),
-    budget_range: '₹1,50,000 - ₹3,00,000',
-  },
-  {
-    id: 'inq-103',
-    name: 'Karan Mehra',
-    email: 'karan@growthfuel.co',
-    phone: '+91 99551 88321',
-    service: 'LLMs & Generative AI Systems',
-    description: 'We want to integrate an autonomous customer support AI agent fine-tuned on our e-commerce product return policy.',
-    status: 'in_progress',
-    admin_notes: 'Sent proposal and architecture diagram.',
-    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-    budget_range: '₹4,00,000+',
-  },
-];
-
 function getStoredInquiries(): Inquiry[] {
-  if (typeof window === 'undefined') return DEFAULT_INQUIRIES;
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_INQUIRIES);
-    if (!raw) return DEFAULT_INQUIRIES;
+    if (!raw) return [];
     return JSON.parse(raw);
   } catch (e) {
-    return DEFAULT_INQUIRIES;
+    return [];
   }
 }
 
@@ -90,7 +50,7 @@ export async function submitInquiry(data: {
 
   let errorMessage: string | undefined;
 
-  // 1. Official Supabase insert query into "TechWorks" table
+  // Official Supabase insert query into "TechWorks" table
   try {
     const { data: insertedData, error } = await supabase
       .from('TechWorks')
@@ -106,18 +66,18 @@ export async function submitInquiry(data: {
       .single();
 
     if (error) {
-      console.warn('Supabase insert note:', error.message);
+      console.error('Supabase insert error:', error.message);
       errorMessage = error.message;
     } else if (insertedData) {
       newInquiry.id = String(insertedData.id || newInquiry.id);
       newInquiry.created_at = insertedData.created_at || newInquiry.created_at;
     }
   } catch (err: any) {
-    console.warn('Supabase connection error:', err);
+    console.error('Supabase connection error:', err);
     errorMessage = err.message || 'Database connection error';
   }
 
-  // 2. Cache in local storage for instant offline / local fallback
+  // Cache in local storage as well
   const localList = getStoredInquiries();
   const updated = [newInquiry, ...localList.filter((item) => item.id !== newInquiry.id)];
   saveStoredInquiries(updated);
@@ -132,14 +92,22 @@ export async function submitInquiry(data: {
 /**
  * Official Supabase Select - Fetches all submissions directly from "TechWorks" table
  */
-export async function fetchInquiries(): Promise<Inquiry[]> {
+export async function fetchInquiries(): Promise<{ inquiries: Inquiry[]; error?: string }> {
   try {
     const { data, error } = await supabase
       .from('TechWorks')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error && Array.isArray(data) && data.length > 0) {
+    if (error) {
+      console.error('Supabase fetch error:', error.message);
+      return { 
+        inquiries: getStoredInquiries(), 
+        error: error.message 
+      };
+    }
+
+    if (Array.isArray(data)) {
       const mapped: Inquiry[] = data.map((item: any) => ({
         id: String(item.id),
         name: item['FULLNAME'] || item.name || 'Anonymous Client',
@@ -150,17 +118,20 @@ export async function fetchInquiries(): Promise<Inquiry[]> {
         status: 'new',
         created_at: item.created_at || new Date().toISOString(),
       }));
+
+      // Update local storage with fresh Supabase cloud records
       saveStoredInquiries(mapped);
-      return mapped;
-    } else if (error) {
-      console.warn('Supabase select note:', error.message);
+      return { inquiries: mapped };
     }
-  } catch (err) {
-    console.warn('Supabase select error:', err);
+  } catch (err: any) {
+    console.error('Supabase query error:', err);
+    return { 
+      inquiries: getStoredInquiries(), 
+      error: err.message || 'Network error fetching data' 
+    };
   }
 
-  // Fallback to local storage if network is offline or table is empty
-  return getStoredInquiries();
+  return { inquiries: getStoredInquiries() };
 }
 
 /**

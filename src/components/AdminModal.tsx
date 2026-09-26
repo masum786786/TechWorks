@@ -36,6 +36,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
   // Dashboard state
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -53,11 +54,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
 
   const loadData = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
-      const data = await fetchInquiries();
-      setInquiries(data);
-    } catch (e) {
+      const res = await fetchInquiries();
+      setInquiries(res.inquiries);
+      if (res.error) {
+        setFetchError(res.error);
+      }
+    } catch (e: any) {
       console.error('Error fetching admin data:', e);
+      setFetchError(e.message || 'Error connecting to database');
     } finally {
       setLoading(false);
     }
@@ -317,6 +323,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
 
             </div>
 
+            {/* Error Notification Bar if Supabase Table/Policy issue exists */}
+            {fetchError && (
+              <div className="mx-4 sm:mx-6 mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>
+                    <strong>Database Notice:</strong> {fetchError}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setFetchError(null)}
+                  className="text-amber-800 hover:text-black font-bold text-xs"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {/* Inquiries Content Area */}
             <div className="flex-1 flex flex-col overflow-hidden p-3 sm:p-6">
               
@@ -362,9 +386,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose }) => {
                 {filteredInquiries.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
                     <FileText className="w-12 h-12 text-gray-300 mb-3" />
-                    <h4 className="text-base font-bold text-[#222222]">No Inquiries Found</h4>
+                    <h4 className="text-base font-bold text-[#222222]">No Inquiries Yet</h4>
                     <p className="text-xs text-[#8A8F94] mt-1 max-w-sm">
-                      {searchTerm ? 'No results matching your query.' : 'New inquiries from the website form will appear here instantly.'}
+                      {searchTerm 
+                        ? 'No results matching your query.' 
+                        : 'Any inquiry submitted from the website form will appear here live from Supabase.'}
                     </p>
                   </div>
                 ) : (
